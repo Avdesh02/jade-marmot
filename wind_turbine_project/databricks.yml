@@ -1,0 +1,9 @@
+; Databricks CLI Configuration for Wind Turbine Project
+; Profile "wind" is already configured in ~/.databrickscfg
+
+[wind]
+host = https://dbc-0090b005-ba2d.cloud.databricks.com
+token = 
+account_id = 1afab785-e196-4789-a670-538c352ff12d
+workspace_id = 7474659581094621
+auth_type = databricks-cli

@@ -1,0 +1,49 @@
+{
+  "turbines": [
+    {
+      "turbine_id": "TURB-001",
+      "location": "Rajasthan",
+      "capacity_mw": 2.1,
+      "commission_date": "2022-03-15",
+      "status": "active",
+      "hub_height_m": 100,
+      "rotor_diameter_m": 80
+    },
+    {
+      "turbine_id": "TURB-002",
+      "location": "Tamil Nadu",
+      "capacity_mw": 3.0,
+      "commission_date": "2021-11-20",
+      "status": "active",
+      "hub_height_m": 120,
+      "rotor_diameter_m": 100
+    },
+    {
+      "turbine_id": "TURB-003",
+      "location": "Maharashtra",
+      "capacity_mw": 1.5,
+      "commission_date": "2022-06-05",
+      "status": "maintenance",
+      "hub_height_m": 80,
+      "rotor_diameter_m": 60
+    },
+    {
+      "turbine_id": "TURB-004",
+      "location": "Gujarat",
+      "capacity_mw": 2.5,
+      "commission_date": "2020-12-10",
+      "status": "active",
+      "hub_height_m": 95,
+      "rotor_diameter_m": 75
+    },
+    {
+      "turbine_id": "TURB-005",
+      "location": "Karnataka",
+      "capacity_mw": 3.2,
+      "commission_date": "2023-01-25",
+      "status": "active",
+      "hub_height_m": 110,
+      "rotor_diameter_m": 110
+    }
+  ]
+}
