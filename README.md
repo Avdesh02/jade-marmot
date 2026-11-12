@@ -119,5 +119,7 @@ volume, the pipeline and the jobs are all bundle-managed.
 | Push to `main` | + bootstrap catalog, deploy dev, unit tests on serverless, end-to-end orchestrator run |
 | Tag `v*` | deploy prod (gate it with required reviewers on the `prod` environment) |
 
-Secrets per GitHub environment: `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID`,
-`DATABRICKS_CLIENT_SECRET` (service principal, OAuth M2M).
+Repository secrets: `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID`,
+`DATABRICKS_CLIENT_SECRET` for the `jade_marmot_ci` service principal (OAuth M2M, scope
+`all-apis`). The service principal needs `ALL PRIVILEGES` and `MANAGE` on the target
+catalog, plus `CREATE CATALOG` for the first prod deploy (it gets that from `admins`).

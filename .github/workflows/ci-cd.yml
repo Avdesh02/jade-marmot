@@ -9,7 +9,9 @@
 # own name onto every catalog, job and pipeline it deploys.
 #
 # Required secrets: DATABRICKS_HOST, plus DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET
-# for a service principal (OAuth M2M). Configure them per environment (dev, prod).
+# for the jade_marmot_ci service principal (OAuth M2M). They are repository secrets, so
+# every environment sees them; the dev/prod environments are created on first use. To
+# gate prod, add required reviewers to the `prod` environment (needs repo admin).
 name: ci-cd
 
 on:
