@@ -1,0 +1,37 @@
+# Unity Catalog objects owned by the bundle. Every table below lives in
+# ${var.catalog} = ${var.model_name}_<target>, so it carries the model name.
+#
+# The catalog itself is NOT a bundle resource: this workspace uses Default Storage, and the
+# catalogs REST API the bundle calls rejects that ("Please use the UI to create a catalog
+# with Default Storage"), while SQL `CREATE CATALOG` accepts it. scripts/bootstrap_catalog.py
+# creates it idempotently; CI runs it before `bundle deploy`.
+resources:
+  schemas:
+    raw:
+      catalog_name: ${var.catalog}
+      name: raw
+      comment: Landing zone. Holds the Volume that Auto Loader reads from.
+    bronze:
+      catalog_name: ${var.catalog}
+      name: bronze
+      comment: Raw sensor readings and turbine change events as landed, one append flow per site.
+    silver:
+      catalog_name: ${var.catalog}
+      name: silver
+      comment: Validated readings, quarantine, SCD1/SCD2 turbine dimensions, site dimension.
+    gold:
+      catalog_name: ${var.catalog}
+      name: gold
+      comment: Alerts, hourly metrics, daily site KPIs and fleet status.
+    ops:
+      catalog_name: ${var.catalog}
+      name: ops
+      comment: Operational data -- pipeline event log and the alert digest.
+
+  volumes:
+    landing:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.raw.name}
+      name: landing
+      volume_type: MANAGED
+      comment: sensors/<site_id>/*.json, turbine_cdc/<site_id>/*.json, _manifests/<run_id>/*.json

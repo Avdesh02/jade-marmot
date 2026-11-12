@@ -1,0 +1,106 @@
+# The SDP job flow: chain the simulator job, refresh the pipeline, validate, publish.
+#
+#   generate_test_data (run_job_task -> wind_test_data_simulator)
+#     -> check_full_refresh (condition on the full_refresh job parameter)
+#          true  -> refresh_pipeline_full
+#          false -> refresh_pipeline_incremental
+#     -> validate_outputs        (either branch; fails the run on a mismatch)
+#     -> publish_alert_digest
+resources:
+  jobs:
+    wind_telemetry_orchestrator:
+      name: ${var.model_name}_${bundle.target}_wind_telemetry_orchestrator
+      description: >
+        End-to-end flow for the wind telemetry SDP pipeline, parameterised per site.
+        Static parameters come from the bundle target; dynamic ones are the job parameters.
+      max_concurrent_runs: 1
+      tags:
+        model_name: ${var.model_name}
+      schedule:
+        quartz_cron_expression: ${var.orchestrator_cron}
+        timezone_id: Asia/Kolkata
+        pause_status: ${var.schedule_pause_status}
+
+      parameters:
+        - name: site_ids
+          default: all
+        - name: scenario
+          default: normal
+        - name: minutes
+          default: "60"
+        - name: fault_rate
+          default: "0.02"
+        - name: start_ts
+          default: ""
+        - name: full_refresh
+          default: "false"
+
+      environments:
+        - environment_key: wheel
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ../dist/*.whl
+
+      tasks:
+        - task_key: generate_test_data
+          run_job_task:
+            job_id: ${resources.jobs.wind_test_data_simulator.id}
+            job_parameters:
+              site_ids: "{{job.parameters.site_ids}}"
+              scenario: "{{job.parameters.scenario}}"
+              minutes: "{{job.parameters.minutes}}"
+              fault_rate: "{{job.parameters.fault_rate}}"
+              start_ts: "{{job.parameters.start_ts}}"
+              run_id: "{{job.run_id}}"
+
+        - task_key: check_full_refresh
+          depends_on:
+            - task_key: generate_test_data
+          condition_task:
+            op: EQUAL_TO
+            left: "{{job.parameters.full_refresh}}"
+            right: "true"
+
+        - task_key: refresh_pipeline_full
+          depends_on:
+            - task_key: check_full_refresh
+              outcome: "true"
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.wind_telemetry_sdp.id}
+            full_refresh: true
+
+        - task_key: refresh_pipeline_incremental
+          depends_on:
+            - task_key: check_full_refresh
+              outcome: "false"
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.wind_telemetry_sdp.id}
+            full_refresh: false
+
+        - task_key: validate_outputs
+          depends_on:
+            - task_key: refresh_pipeline_full
+            - task_key: refresh_pipeline_incremental
+          # Exactly one branch runs; the other is excluded by the condition.
+          run_if: AT_LEAST_ONE_SUCCESS
+          environment_key: wheel
+          python_wheel_task:
+            package_name: jade_marmot_wind
+            entry_point: validate_outputs
+            parameters:
+              - --catalog=${var.catalog}
+              - --landing-root=${var.landing_root}
+              - --run-id={{job.run_id}}
+
+        - task_key: publish_alert_digest
+          depends_on:
+            - task_key: validate_outputs
+          environment_key: wheel
+          python_wheel_task:
+            package_name: jade_marmot_wind
+            entry_point: alert_digest
+            parameters:
+              - --catalog=${var.catalog}
+              - --run-id={{job.run_id}}
+              - --site-ids={{job.parameters.site_ids}}

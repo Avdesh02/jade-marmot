@@ -1,0 +1,46 @@
+# Spark Declarative Pipeline (SDP): bronze -> silver -> gold, serverless, triggered.
+#
+#   bronze  sensor_readings_raw, turbine_cdc_raw   streaming tables, one APPEND FLOW per site
+#   silver  sensor_readings (+ quarantine)          streaming, rule split + watermark dedupe
+#           dim_turbine (SCD2), turbine_current (SCD1)   AUTO CDC flows (change data capture)
+#           dim_site                                materialized view
+#   gold    turbine_alerts                          streaming table
+#           turbine_hourly_metrics, site_daily_kpis, fleet_status   materialized views
+resources:
+  pipelines:
+    wind_telemetry_sdp:
+      name: ${var.model_name}_${bundle.target}_wind_telemetry_sdp
+      catalog: ${var.catalog}
+      schema: ${resources.schemas.bronze.name}
+      serverless: true
+      continuous: false
+      channel: CURRENT
+      # Puts src/ on sys.path, so the transformations import jade_marmot_wind directly.
+      root_path: ../src
+      libraries:
+        - glob:
+            include: ../src/pipeline/transformations/**
+      event_log:
+        catalog: ${var.catalog}
+        schema: ${resources.schemas.ops.name}
+        name: wind_telemetry_event_log
+      # Static parameters -- read by jade_marmot_wind.pipeline_config.PipelineConfig.
+      configuration:
+        wind.catalog: ${var.catalog}
+        wind.schema.bronze: ${resources.schemas.bronze.name}
+        wind.schema.silver: ${resources.schemas.silver.name}
+        wind.schema.gold: ${resources.schemas.gold.name}
+        wind.schema.ops: ${resources.schemas.ops.name}
+        wind.sites: ${var.enabled_sites}
+        wind.landing_root: ${var.landing_root}
+        wind.silver.dedupe_watermark: ${var.dedupe_watermark}
+        wind.threshold.wind_speed_mps.warning: "20"
+        wind.threshold.wind_speed_mps.critical: "25"
+        wind.threshold.gearbox_oil_temp_c.warning: ${var.gearbox_oil_temp_warning_c}
+        wind.threshold.gearbox_oil_temp_c.critical: ${var.gearbox_oil_temp_critical_c}
+        wind.threshold.generator_temp_c.warning: "110"
+        wind.threshold.generator_temp_c.critical: "130"
+        wind.threshold.vibration_mm_s.warning: "7.1"
+        wind.threshold.vibration_mm_s.critical: "11"
+      tags:
+        model_name: ${var.model_name}

@@ -1,0 +1,128 @@
+# CI/CD for the jade_marmot bundle.
+#
+#   pull request -> lint + unit tests (local Spark) + bundle validate (dev and prod)
+#   push to main -> the above, then deploy dev, run unit tests on serverless, run the
+#                   orchestrator end to end (simulate -> SDP refresh -> validate)
+#   tag v*       -> deploy prod (behind the `prod` environment's required reviewers)
+#
+# model_name is derived from the repository folder name, so a fork or rename carries its
+# own name onto every catalog, job and pipeline it deploys.
+#
+# Required secrets: DATABRICKS_HOST, plus DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET
+# for a service principal (OAuth M2M). Configure them per environment (dev, prod).
+name: ci-cd
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+  # Must satisfy bundle.databricks_cli_version in databricks.yml.
+  DATABRICKS_CLI_VERSION: "1.24.0"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: |
+          ruff check src tests scripts
+          ruff format --check src tests scripts
+      - name: Unit tests
+        run: pytest tests/unit -v --junitxml=test-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: test-results.xml
+
+  validate:
+    runs-on: ubuntu-latest
+    needs: test
+    environment: dev
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+        with:
+          version: ${{ env.DATABRICKS_CLI_VERSION }}
+      - name: Derive model_name from the repository folder
+        run: echo "BUNDLE_VAR_model_name=$(python3 scripts/model_name.py)" >> "$GITHUB_ENV"
+      - run: databricks bundle validate -t dev
+      - run: databricks bundle validate -t prod
+
+  deploy-dev:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: validate
+    environment: dev
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: databricks/setup-cli@main
+        with:
+          version: ${{ env.DATABRICKS_CLI_VERSION }}
+      - run: pip install wheel
+      - name: Derive model_name from the repository folder
+        run: echo "BUNDLE_VAR_model_name=$(python3 scripts/model_name.py)" >> "$GITHUB_ENV"
+      - name: Bootstrap catalog
+        run: python scripts/bootstrap_catalog.py --target dev
+      - name: Deploy
+        run: databricks bundle deploy -t dev
+      - name: Unit tests on serverless
+        run: databricks bundle run -t dev wind_unit_tests
+      - name: Integration run (simulate -> SDP -> validate)
+        run: |
+          databricks bundle run -t dev wind_telemetry_orchestrator \
+            --params site_ids=all,scenario=storm,minutes=60,fault_rate=0.02
+
+  deploy-prod:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: validate
+    environment: prod
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: databricks/setup-cli@main
+        with:
+          version: ${{ env.DATABRICKS_CLI_VERSION }}
+      - run: pip install wheel
+      - name: Derive model_name from the repository folder
+        run: echo "BUNDLE_VAR_model_name=$(python3 scripts/model_name.py)" >> "$GITHUB_ENV"
+      - name: Bootstrap catalog
+        run: python scripts/bootstrap_catalog.py --target prod
+      - run: databricks bundle deploy -t prod

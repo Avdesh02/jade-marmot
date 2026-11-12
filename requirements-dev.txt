@@ -1,0 +1,5 @@
+pyspark==3.5.7
+pytest>=8,<10
+pyyaml>=6
+ruff==0.17.4
+wheel

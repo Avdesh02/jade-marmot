@@ -1,0 +1,23 @@
+# Runs the unit test suite on serverless compute against the deployed source. Tests marked
+# `local_only` (local file streaming, bundle YAML checks) are skipped there; CI runs them.
+resources:
+  jobs:
+    wind_unit_tests:
+      name: ${var.model_name}_${bundle.target}_wind_unit_tests
+      description: pytest over tests/unit on serverless, using the deployed bundle files.
+      max_concurrent_runs: 1
+      tags:
+        model_name: ${var.model_name}
+      environments:
+        - environment_key: tests
+          spec:
+            environment_version: "4"
+            dependencies:
+              - pytest>=8,<10
+      tasks:
+        - task_key: pytest
+          environment_key: tests
+          spark_python_task:
+            python_file: ../tests/run_unit_tests.py
+            parameters:
+              - --root=${workspace.file_path}
