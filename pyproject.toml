@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jade_marmot_wind"
+version = "0.1.0"
+description = "Wind turbine telemetry: SDP pipeline library, test-data simulator and job entry points."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+# Entry points for python_wheel_task. The key is what a job's `entry_point` names.
+plan_simulation = "jade_marmot_wind.jobs.plan_simulation:main"
+simulate_site = "jade_marmot_wind.jobs.simulate_site:main"
+validate_outputs = "jade_marmot_wind.jobs.validate_outputs:main"
+alert_digest = "jade_marmot_wind.jobs.alert_digest:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["jade_marmot_wind*"]
+
+[tool.setuptools.package-data]
+jade_marmot_wind = ["config/*.json"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests/unit"]
+markers = [
+    "local_only: needs the git checkout (repo folder name, bundle YAML); skipped on Databricks",
+]
+filterwarnings = ["ignore::DeprecationWarning", "ignore::FutureWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["wind_turbine_project"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# `ruff format` owns line length; long SQL/regex literals are clearer unwrapped.
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["jade_marmot_wind", "conftest"]
+
+[tool.ruff.lint.per-file-ignores]
+# SDP source files get `spark` injected by the pipeline runtime.
+"src/pipeline/transformations/*.py" = ["F821"]

@@ -1,0 +1,86 @@
+# Test-data simulation pipeline: plan which sites to simulate, then fan out one task per site.
+#
+# Static parameters  (deploy time):  ${var.enabled_sites}, ${var.landing_root}, concurrency
+# Dynamic parameters (run time):     the job parameters below, {{job.run_id}},
+#                                    {{tasks.plan_sites.values.sites}}, {{input.site_id}}
+resources:
+  jobs:
+    wind_test_data_simulator:
+      name: ${var.model_name}_${bundle.target}_wind_test_data_simulator
+      description: >
+        Writes synthetic SCADA telemetry and turbine master-data CDC files for the selected
+        sites into the landing Volume. Run standalone, or chained from the orchestrator.
+      max_concurrent_runs: 1
+      tags:
+        model_name: ${var.model_name}
+
+      parameters:
+        - name: site_ids
+          default: all
+        - name: scenario
+          default: normal
+        - name: minutes
+          default: "60"
+        - name: interval_seconds
+          default: "60"
+        - name: fault_rate
+          default: "0.02"
+        - name: tag_count
+          default: "8"
+        - name: start_ts
+          default: ""
+        - name: seed
+          default: ""
+        - name: reseed_master_data
+          default: "false"
+        # Set by the orchestrator so manifests land under its run id; empty = this run.
+        - name: run_id
+          default: ""
+
+      environments:
+        - environment_key: wheel
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ../dist/*.whl
+
+      tasks:
+        - task_key: plan_sites
+          description: Resolve enabled (static) x requested (dynamic) sites; publish them as a task value.
+          environment_key: wheel
+          python_wheel_task:
+            package_name: jade_marmot_wind
+            entry_point: plan_simulation
+            parameters:
+              - --enabled-sites=${var.enabled_sites}
+              - --site-ids={{job.parameters.site_ids}}
+              - --landing-root=${var.landing_root}
+              - --scenario={{job.parameters.scenario}}
+
+        - task_key: simulate_sites
+          depends_on:
+            - task_key: plan_sites
+          for_each_task:
+            inputs: "{{tasks.plan_sites.values.sites}}"
+            concurrency: ${var.simulation_concurrency}
+            task:
+              task_key: simulate_site
+              environment_key: wheel
+              max_retries: 1
+              python_wheel_task:
+                package_name: jade_marmot_wind
+                entry_point: simulate_site
+                parameters:
+                  - --site-id={{input.site_id}}
+                  - --enabled-sites=${var.enabled_sites}
+                  - --landing-root=${var.landing_root}
+                  - --run-id={{job.parameters.run_id}}
+                  - --own-run-id={{job.run_id}}
+                  - --scenario={{job.parameters.scenario}}
+                  - --minutes={{job.parameters.minutes}}
+                  - --interval-seconds={{job.parameters.interval_seconds}}
+                  - --fault-rate={{job.parameters.fault_rate}}
+                  - --tag-count={{job.parameters.tag_count}}
+                  - --start-ts={{job.parameters.start_ts}}
+                  - --seed={{job.parameters.seed}}
+                  - --reseed-master-data={{job.parameters.reseed_master_data}}

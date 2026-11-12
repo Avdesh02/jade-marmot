@@ -1,0 +1,94 @@
+# Declarative Automation Bundle for the wind turbine telemetry platform.
+#
+# Naming standard: every Databricks object carries ${var.model_name} -- the git folder name
+# normalised to a UC identifier (jade-marmot -> jade_marmot). CI derives it from the checkout
+# folder and passes it as BUNDLE_VAR_model_name; the default below matches this repo and
+# tests/unit/test_bundle_config.py fails if the two drift apart.
+#
+#   catalog          ${var.model_name}_${bundle.target}                 jade_marmot_dev
+#   jobs, pipeline   ${var.model_name}_${bundle.target}_<purpose>       jade_marmot_dev_wind_telemetry_sdp
+#   workspace folder /Workspace/Users/<you>/${var.model_name}/<target>
+bundle:
+  name: jade_marmot
+  databricks_cli_version: ">= 1.24.0"
+
+include:
+  - resources/*.yml
+
+artifacts:
+  wind_wheel:
+    type: whl
+    path: .
+    build: python -m pip wheel --no-deps --wheel-dir dist .
+
+sync:
+  exclude:
+    - wind_turbine_project/**
+
+variables:
+  model_name:
+    description: Git folder name as a UC identifier. Prefixes every object this bundle creates.
+    default: jade_marmot
+  catalog:
+    description: Unity Catalog catalog owned by this bundle target.
+    default: ${var.model_name}_${bundle.target}
+  landing_root:
+    description: UC Volume path the simulator (or real site gateways) write landing files to.
+    default: /Volumes/${var.model_name}_${bundle.target}/raw/landing
+
+  # --- Static parameters: fixed per target at deploy time --------------------------------
+  enabled_sites:
+    description: Sites this target serves, comma-separated or "all". The pipeline builds one append flow per site.
+    default: all
+  dedupe_watermark:
+    description: How long silver remembers a reading_id for de-duplication.
+    default: 3 days
+  simulation_concurrency:
+    description: Max sites simulated in parallel by the for_each task.
+    default: 5
+  orchestrator_cron:
+    description: Quartz cron for the orchestrator schedule.
+    default: "0 7 * * * ?"
+  schedule_pause_status:
+    description: PAUSED or UNPAUSED.
+    default: PAUSED
+  gearbox_oil_temp_warning_c:
+    default: 80
+  gearbox_oil_temp_critical_c:
+    default: 95
+
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://dbc-0090b005-ba2d.cloud.databricks.com
+      root_path: /Workspace/Users/${workspace.current_user.userName}/${var.model_name}/${bundle.target}
+    # Development behaviour without `mode: development`, whose "[dev <user>]" name prefix
+    # would break the naming standard.
+    presets:
+      pipelines_development: true
+      trigger_pause_status: PAUSED
+      tags:
+        model_name: ${var.model_name}
+        env: dev
+    variables:
+      enabled_sites: RJ01,TN01,GJ01
+      simulation_concurrency: 3
+
+  prod:
+    mode: production
+    workspace:
+      host: https://dbc-0090b005-ba2d.cloud.databricks.com
+      # A restricted folder, not /Workspace/Shared (writable by every workspace user). CI
+      # deploys prod as a service principal, whose home this resolves to.
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${var.model_name}/${bundle.target}
+    presets:
+      tags:
+        model_name: ${var.model_name}
+        env: prod
+    variables:
+      enabled_sites: all
+      schedule_pause_status: UNPAUSED
+    permissions:
+      - level: CAN_MANAGE
+        group_name: admins
